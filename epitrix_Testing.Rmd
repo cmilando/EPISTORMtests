@@ -1,0 +1,168 @@
+---
+title: "epitrix Testing"
+author: "Christine Sangphet"
+date: "2024-06-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Fitting a gamma distribution to delay data
+
+### Simulate data which replicate the serial interval (SI), i.e. the delays between primary and secondary symptom onsets, in Ebola Virus Disease (EVD)
+
+```{r}
+#load environment
+
+library(epitrix)
+```
+
+```{r}
+#start by converting previously estimates of the mean and standard deviation of the SI to the parameters of a Gamma distribution 
+
+mu <- 15.3 # mean in days days
+sigma <- 9.3 # standard deviation in days
+cv <- sigma/mu # coefficient of variation
+cv
+```
+
+```{r}
+param <- gamma_mucv2shapescale(mu, cv) # convertion to Gamma parameters
+param
+
+#the shape and scale are parameters of a Gamma distribution we can use to generate delays. However, delays are typically reported per days, which implies a discretization (from continuous time to discrete numbers).
+```
+
+```{r}
+#we use the package distcrete to achieve this discretization. It generates a list of functions, including one to simulate data ($r), which we use to simulate 500 delays
+
+library(distcrete)
+
+si <- distcrete::distcrete("gamma", interval = 1,
+               shape = param$shape,
+               scale = param$scale, w = 0)
+si
+```
+
+```{r}
+set.seed(1)
+x <- si$r(500)
+head(x, 10)
+```
+
+```{r}
+hist(x, col = "grey", border = "white",
+     xlab = "Days between primary and secondary onset",
+     main = "Simulated serial intervals")
+
+#x contains simulated data, for illustrative purpose. In practice, one would use real data from an ongoing outbreaks
+```
+
+```{r}
+#now we use fit_disc_gamma to estimate the parameters of a dicretised Gamma distribution from the data
+
+si_fit <- fit_disc_gamma(x)
+si_fit
+```
+
+# Converting a growth rate (r) to a reproduction number (R0)
+
+### The package incidence can fit a log-linear model to incidence curves (function fit), which produces a growth rate (r). This growth rate can in turn be translated into a basic reproduction number (R0) using r2R0. We illustrate this using simulated Ebola data from the outbreaks package, and using the serial interval from the previous example.
+
+```{r}
+#load environment
+
+library(incidence)
+library(outbreaks)
+```
+
+```{r}
+i <- incidence(ebola_sim$linelist$date_of_onset)
+i
+```
+
+```{r}
+f <- fit(i[1:150]) # fit on first 150 days
+```
+
+```{r}
+plot(i[1:200], fit = f, color = "#9fc2fc")
+```
+
+```{r}
+r2R0(f$info$r, si$d(1:100))
+```
+
+```{r}
+r2R0(f$info$r.conf, si$d(1:100))
+```
+
+```{r}
+#we can also use the function lm2R0_sample to generate samples of R0 values compatible with a model fit
+
+R0_val <- lm2R0_sample(f$model, si$d(1:100), n = 100)
+head(R0_val)
+```
+
+```{r}
+hist(R0_val, col = "grey", border = "white")
+```
+
+# Estimate incubation periods
+
+### The function empirical_incubation_dist() computes the discrete probability distribution by giving equal weight to each patient. Thus, in the case of N patients, the n possible exposure dates of a given patient get the overall weight 1/(n\*N). The function returns a data frame with column incubation_period containing the different incubation periods with a time step of one day and their relative_frequency
+
+```{r}
+#load environment 
+
+library(magrittr)
+library(epitrix)
+library(distcrete)
+library(ggplot2)
+```
+
+```{r}
+#make a linelist object containing toy data with several possible exposure dates for each case
+
+ll <- sim_linelist(15)
+
+x <- 0:15
+y <- distcrete("gamma", 1, shape = 12, rate = 3, w = 0)$d(x)
+mkexposures <- function(i) {
+  i - sample(x, size = sample.int(5, size = 1), replace = FALSE, prob = y)
+}
+exposures <- sapply(ll$date_of_onset, mkexposures)
+ll$dates_exposure <- exposures
+
+print(ll)
+```
+
+```{r}
+#empirical distribution
+
+incubation_period_dist <- empirical_incubation_dist(ll, date_of_onset, dates_exposure)
+print(incubation_period_dist)
+```
+
+```{r}
+ggplot(incubation_period_dist, aes(incubation_period, relative_frequency)) +
+  geom_col()
+```
+
+```{r}
+#fit discrete gamma
+
+fit <- fit_gamma_incubation_dist(ll, date_of_onset, dates_exposure)
+print(fit)
+```
+
+```{r}
+x = c(0:10)
+y = fit$distribution$d(x)
+ggplot(data.frame(x = x, y = y), aes(x, y)) +
+  geom_col(data = incubation_period_dist, aes(incubation_period, relative_frequency)) +
+  geom_point(stat="identity", col = "red", size = 3) +
+  geom_line(stat="identity", col = "red")
+```

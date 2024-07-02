@@ -1,0 +1,181 @@
+---
+title: "R0 Testing"
+author: "Christine Sangphet"
+date: "2024-06-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# est.GT: Find the best-fitting GT distribution for a series of serial interval
+
+```{r}
+#load environment 
+
+library(R0)
+```
+
+```{r}
+# Data taken from traced cases of H1N1 viruses.
+
+data(H1N1.serial.interval)
+est.GT(serial.interval=H1N1.serial.interval)
+```
+
+```{r}
+#the same result can be achieved with two vectors of dates of onset.
+
+# Here we use the same data, but trick the function into thinking onset dates are all "0".
+
+est.GT(infector.onset.dates=rep(0,length(H1N1.serial.interval)),
+infectee.onset.dates=H1N1.serial.interval)
+```
+
+# est.R0.AR: Estimate R0 from attack rate of an epidemic
+
+### Woodall reported an attack rate of 0.31 in a population of 1732 during the 1957 H2N2 influenza pandemic (’Age and Asian Influenza, 1957’, BMJ, 1958)
+
+```{r}
+est.R0.AR(pop.size=1732, AR=0.31)
+```
+
+```{r}
+est.R0.AR(AR=0.31)
+```
+
+```{r}
+est.R0.AR(pop.size=1732, incid=31)
+```
+
+```{r}
+est.R0.AR(pop.size=1732, incid=c(2,3,4,7,4,2,4,5))
+```
+
+```{r}
+est.R0.AR(pop.size=1732, incid=c(2,3,0,7,4,2,0,5))
+```
+
+# est.R0.EG: Estimate R from exponential growth rate
+
+### Data is taken from the paper by Nishiura for key transmission parameters of an institutional outbreak during 1918 influenza pandemic in Germany)
+
+```{r}
+data(Germany.1918)
+mGT<-generation.time("gamma", c(3, 1.5))
+est.R0.EG(Germany.1918, mGT, begin=1, end=27)
+```
+
+# est.R0.ML: Estimate the reproduction number by maximum likelihood
+
+### Data is taken from paper by Nishiura for key transmission parameters of an institutional outbreak during the 1918 influenza pandemic in Germany)
+
+```{r}
+data(Germany.1918)
+mGT<-generation.time("gamma", c(2.45, 1.38))
+est.R0.ML(Germany.1918, mGT, begin=1, end=27, range=c(0.01,50))
+```
+
+```{r}
+res=est.R0.ML(Germany.1918, mGT, begin=1, end=27, range=c(0.01,50))
+plot(res)
+```
+
+# est.R0.TD: Estimate the time dependent reproduction number
+
+### Data is taken from the paper by Nishiura for key transmission parameters of an institutional outbreak during 1918 influenza pandemic in Germany)
+
+```{r}
+data(Germany.1918)
+mGT<-generation.time("gamma", c(3, 1.5))
+TD <- est.R0.TD(Germany.1918, mGT, begin=1, end=126, nsim=100)
+```
+
+```{r}
+TD
+```
+
+# estimate.R: Estimate R0 for one incidence dataset using several methods
+
+```{r}
+#Outbreak during 1918 influenza pandemic in Germany
+
+data(Germany.1918)
+mGT<-generation.time("gamma", c(3, 1.5))
+estR0<-estimate.R(Germany.1918, mGT, begin=1, end=27, methods=c("EG", "ML", "TD", "AR", "SB"),
+pop.size=100000, nsim=100)
+attributes(estR0)
+```
+
+```{r}
+#Estimates results are stored in the $estimates object
+
+estR0
+```
+
+# generation.time: Generation Time distribution
+
+```{r}
+#GT for children at house(from Cauchemez PNAS 2011)
+
+GT.chld.hsld1<-generation.time("empirical", c(0,0.25,0.2,0.15,0.1,0.09,0.05,0.01))
+plot(GT.chld.hsld1, col="green")
+GT.chld.hsld1
+```
+
+```{r}
+GT.chld.hsld2<-generation.time("gamma", c(2.45, 1.38))
+GT.chld.hsld2
+```
+
+```{r}
+# T for school & community
+
+GTs1 <- generation.time("empirical", c(0, 0.95, 0.05))
+plot(GTs1, col='blue')
+```
+
+```{r}
+plot(GT.chld.hsld1, ylim=c(0,0.5), col="red")
+par(new=TRUE)
+plot(GT.chld.hsld2, xlim=c(0,7), ylim=c(0,0.5), col="black")
+```
+
+# impute.incid: Optimization routine for incidence imputation
+
+### Data is taken from the paper by Nishiura for key transmission parameters of an institutional outbreak during 1918 influenza pandemic in Germany
+
+```{r}
+#load environment
+
+library(linelist)
+library(epitrix)
+```
+
+```{r}
+data(Germany.1918)
+mGT<-generation.time("gamma", c(2.6,1))
+```
+
+```{r}
+sen = sensitivity.analysis(sa.type="time", incid=Germany.1918, GT=mGT, begin=1:15, end=16:30,
+est.method="EG")
+```
+
+```{r}
+plot(sen, what=c("criterion","heatmap"))
+```
+
+# sim.epid: Epidemic outbreak simulation
+
+### In this example we simulate n=100 epidemic curves, with peak value at 150 incident cases,
+
+## and maximum epidemic length of 30 time units. Only the outbreak phase is computed. When the peak value is reached, the process is stopped and another epidemic is generated.
+
+```{r}
+sim.epid(epid.nb=100, GT=generation.time("gamma",c(3,1.5)), R0=1.5,
+epid.length=30, family="poisson", peak.value=150)
+
+#Here, a 30*100 matrix is returned. Each column is a single epidemic.
+```

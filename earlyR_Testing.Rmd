@@ -1,0 +1,166 @@
+---
+title: "earlyR Testing"
+author: "Christine Sangphet"
+date: "2024-06-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Worked Example
+
+### Assume a small outbreak of Ebola Virus Disease (EVD), for which the serial interval has been previously characterised. We study a fake outbreak, for which we will quantify infectiousness (R), and then project future incidence
+
+```{r}
+#load environment 
+
+library(earlyR)
+library(ggplot2)
+library(incidence)
+```
+
+```{r}
+#define the onset dates
+
+onset <- as.Date(c("2017-02-04", "2017-02-12", "2017-02-15",
+                   "2017-02-23", "2017-03-01", "2017-03-01",
+           "2017-03-02", "2017-03-03", "2017-03-03")) 
+```
+
+```{r}
+#compute the daily incidence
+
+library(incidence)
+
+i <- incidence(onset)
+i
+
+plot(i, border = "white")
+```
+
+```{r}
+#assume the current date is 3/21/2017. we need to indicate this to incidence using:
+
+today <- as.Date("2017-03-21")
+i <- incidence(onset, last_date = today)
+i
+
+#plot and adjust x-axis
+
+plot(i, border = "white") +
+  scale_x_date(
+    breaks = seq(min(i$dates), max(i$dates), by = "week"),
+    labels = function(x) format(x, "%Y/%m/%d")
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+#note: it is essential to make sure that the last days without cases are included (omitting this information would lead to an over-estimation of R)
+```
+
+### Estimating the Likelihood Distribution of R
+
+```{r}
+#for estimating R, we need estimates of the mean and standard deviation (sd) of the serial interval i.e. the delay between the primary and secondary sympton onset dates
+
+#define mean and sd (defined on website)
+
+mu <- 15.3 # mean in days days
+sigma <- 9.3 # sd in days 
+
+#the function get_R is then used to estimate the most likely values of R:
+
+res <- get_R(i, si_mean = mu, si_sd = sigma)
+res
+
+plot(res)
+```
+
+### Represent infectiousness over time
+
+```{r}
+plot(res, "lambdas", scale = length(onset) + 1) +
+  geom_vline(xintercept = onset, col = "grey", lwd = 1.5) +
+  geom_vline(xintercept = today, col = "blue", lty = 2, lwd = 1.5)
+
+#the figure shows the global force of infection over time, with vertical grey bards indicating the dates of sympton of onset. the dashed blue line indicates current day. note: the vertical scale for the bars is arbitrary, and only represents the relative force of infection
+```
+
+### Using sample_R to get a large sample of likely R values
+
+```{r}
+R_val <- sample_R(res, 1000)
+summary(R_val)
+
+quantile(R_val)
+
+quantile(R_val, c(0.025, 0.975))
+
+hist(R_val, border = "grey", col = "navy",
+     xlab = "Values of R",
+     main = "Sample of likely R values")
+```
+
+### Simulating future epicurves
+
+```{r}
+#retrieve the serial interval (SI)
+
+si <- res$si
+si
+```
+
+```{r}
+#use the package projections 
+
+library(projections)
+
+future_i <- project(i, R = R_val, n_sim = 1000, si = res$si, n_days = 30)
+future_i
+
+mean(future_i) 
+plot(future_i)
+```
+
+### Having the distribution of the total number of new cases predicted in the next 30 days
+
+```{r}
+predicted_n <- colSums(future_i)
+summary(predicted_n)
+hist(predicted_n, col = "darkred", border = "white",
+     main = "Prediction: new cases in 30 days",
+     xlab = "Total number of new cases")
+```
+
+### What the results will look like without the recent zero incidence
+
+```{r}
+alt_i <- incidence(onset)
+alt_res <- get_R(alt_i, si_mean = mu, si_sd = sigma)
+alt_R_val <- sample_R(alt_res, 1000)
+alt_future_i <- project(alt_i, R = alt_R_val, n_sim = 1000, si = res$si, n_days = 30)
+alt_future_i
+
+mean(alt_future_i)
+#> [1] 5.5434
+plot(alt_future_i)
+```
+
+```{r}
+## alternative plot
+col <- "#cc66991a"
+matplot(alt_future_i, type = "l", col = col, lty = 1, lwd = 5,
+        xlab = "Day from today",
+    ylab = "Projected daily incidence")
+```
+
+```{r}
+alt_predicted_n <- colSums(alt_future_i)
+summary(alt_predicted_n)
+
+hist(alt_predicted_n, col = "darkred", border = "white",
+     main = "Prediction: new cases in 30 days",
+     xlab = "Total number of new cases")
+
+```

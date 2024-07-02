@@ -1,0 +1,217 @@
+---
+title: "EpiNow2 Testing"
+author: "Christine Sangphet"
+date: "2024-06-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Reporting delays, incubation period, and generation time
+
+```{r}
+#load environment
+
+library(EpiNow2)
+```
+
+```{r}
+#if data on the delay between onset and infection was available we could fit a distribution to it, using estimate_delay(), with appropriate uncertainty as follows
+
+reporting_delay <- estimate_delay(
+  rlnorm(1000, log(2), 1),
+  max_value = 14, bootstraps = 1
+)
+```
+
+```{r}
+#If data was not available we could instead specify an informed estimate of the likely delay using the distribution functions Gamma or LogNormal. To demonstrate, we choose a lognormal distribution with mean 2, standard deviation 1 and a maximum of 10
+
+reporting_delay <- LogNormal(mean = 2, sd = 1, max = 10)
+reporting_delay
+```
+
+```{r}
+example_generation_time
+```
+
+```{r}
+example_incubation_period
+```
+
+# function epinow()
+
+### This function represents the core functionality of the package and includes results reporting, plotting, and optional saving. It requires a data frame of cases by date of report and the distributions defined above.
+
+```{r}
+#Load example case data
+
+reported_cases <- example_confirmed[1:60]
+head(reported_cases)
+```
+
+### Estimate cases by date of infection, the time-varying reproduction number, the rate of growth, and forecast these estimates into the future by 7 days.
+
+### Summarize the posterior and return a summary table and plots for reporting purposes. Here we use the default model parameterisation that prioritizes real-time performance over run-time or other considerations.
+
+```{r}
+estimates <- epinow(
+  data = reported_cases,
+  generation_time = generation_time_opts(example_generation_time),
+  delays = delay_opts(example_incubation_period + reporting_delay),
+  rt = rt_opts(prior = list(mean = 2, sd = 0.2)),
+  stan = stan_opts(cores = 4, control = list(adapt_delta = 0.99)),
+  verbose = interactive()
+)
+names(estimates)
+```
+
+```{r}
+#both summary measures and posterior samples are returned for all parameters in an easily explored format which can be accessed using summary
+
+knitr::kable(summary(estimates))
+```
+
+```{r}
+#summarised parameter estimates can also easily be returned, either filtered for a single parameter or for all parameters
+
+head(summary(estimates, type = "parameters", params = "R"))
+```
+
+```{r}
+#reported cases are returned in a separate data frame in order to streamline the reporting of forecasts and for model evaluation
+
+head(summary(estimates, output = "estimated_reported_cases"))
+```
+
+```{r}
+# a range of plots are returned (with the single summary plot shown below). These plots can also be generated using the following plot method
+
+plot(estimates)
+```
+
+# Alternative way: single region
+
+```{r}
+#Here we use the example delay and generation time distributions that come with the package. This should be replaced with parameters relevant to the system that is being studied
+
+options(mc.cores = 4)
+reported_cases <- example_confirmed[1:60]
+reporting_delay <- LogNormal(mean = 2, sd = 1, max = 10)
+delay <- example_incubation_period + reporting_delay
+rt_prior <- list(mean = 2, sd = 0.1)
+```
+
+```{r}
+#We can then run the epinow() function with the same arguments as estimate_infections()
+
+res <- epinow(reported_cases,
+  generation_time = generation_time_opts(example_generation_time),
+  delays = delay_opts(delay),
+  rt = rt_opts(prior = rt_prior)
+)
+```
+
+```{r}
+res$plots$R
+```
+
+# **Running the model simultaneously on multiple regions**
+
+```{r}
+#say, for example, we construct a dataset containing two regions, testland and realland (in this simple example both containing the same case data)
+
+cases <- example_confirmed[1:60]
+cases <- data.table::rbindlist(list(
+  data.table::copy(cases)[, region := "testland"],
+  cases[, region := "realland"]
+ ))
+```
+
+```{r}
+#To then run this on multiple regions using the default options above, we could use
+
+region_rt <- regional_epinow(
+  data = cases,
+  generation_time = generation_time_opts(example_generation_time),
+  delays = delay_opts(delay),
+  rt = rt_opts(prior = rt_prior)
+)
+```
+
+```{r}
+region_rt$summary$summarised_results$table
+```
+
+```{r}
+region_rt$summary$plots$R
+```
+
+# function regional_epinow()
+
+### The regional_epinow() function runs the epinow() function across multiple regions in an efficient manner.
+
+```{r}
+#Define cases in multiple regions delineated by the region variable
+
+reported_cases <- data.table::rbindlist(list(
+  data.table::copy(reported_cases)[, region := "testland"],
+  reported_cases[, region := "realland"]
+))
+head(reported_cases)
+```
+
+```{r}
+#Calling regional_epinow() runs the epinow() on each region in turn (or in parallel depending on the settings used). Here we switch to using a weekly random walk rather than the full Gaussian process model giving us piecewise constant estimates by week
+
+estimates <- regional_epinow(
+  data = reported_cases,
+  generation_time = generation_time_opts(example_generation_time),
+  delays = delay_opts(example_incubation_period + reporting_delay),
+  rt = rt_opts(prior = list(mean = 2, sd = 0.2), rw = 7),
+  gp = NULL,
+  stan = stan_opts(cores = 4, warmup = 250, samples = 1000)
+)
+```
+
+```{r}
+#summary measures that are returned include a table formatted for reporting (along with raw results for further processing). Futures updated will extend the S3 methods used above to smooth access to this output
+
+knitr::kable(estimates$summary$summarised_results$table)
+```
+
+```{r}
+#a range of plots are again returned (with the single summary plot shown below)
+
+estimates$summary$summary_plot
+```
+
+# function estimate_infections()
+
+```{r}
+#load environment 
+
+library("rstan")
+```
+
+```{r}
+#set the number of cores to use to 4 but the optimal value here will depend on the computing resources available
+
+options(mc.cores = 4)
+```
+
+```{r}
+#we will use an example data set that is included in the package, representing an outbreak of COVID-19 with an initial rapid increase followed by decreasing incidence
+
+library("ggplot2")
+reported_cases <- example_confirmed[1:60]
+ggplot(reported_cases, aes(x =  date, y = confirm)) +
+  geom_col() +
+  theme_minimal() +
+  xlab("Date") +
+  ylab("Cases")
+```
+
+# 
