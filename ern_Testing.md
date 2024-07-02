@@ -1,26 +1,29 @@
----
-title: "ern Testing"
-author: "Christine Sangphet"
-date: "2024-06-27"
-output: github_document
----
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
+ern Testing
+================
+Christine Sangphet
+2024-06-27
 
 # Example with clinical data
 
-```{r}
+``` r
 #load environment
 
 library(ern)
+```
+
+    ## 
+    ## ern version: 2.0.0 
+    ## 
+    ## If not already installed, software JAGS is recommended. 
+    ## (https://sourceforge.net/projects/mcmc-jags/files/)
+
+``` r
 library(ggplot2)
 ```
 
 ### A sample of Canadian COVID-19 clinical reports are included in ern. This data set includes weekly reports from the provinces of British Columbia, Alberta, Saskatchewan, Manitoba, Ontario, and Quebec, between 1 Feb 2020 and 1 Apr 2023.
 
-```{r}
+``` r
 #we start by loading a subset of the weekly clinical report data for Quebec
 
 dat <- (ern::cl.data 
@@ -30,7 +33,7 @@ dat <- (ern::cl.data
 ))
 ```
 
-```{r}
+``` r
 #we define distributions for the reporting fraction, reporting delay, incubation period, and intrinsic generation interval
 
 #distributions
@@ -75,27 +78,33 @@ dist.gi = ern::def_dist(
 )
 ```
 
-```{r}
+``` r
 #we can visualize the assumed distributions with plot_dist()
 
 plot_dist(dist.repdelay) + labs(title = paste0("Mean reporting delay distribution (", dist.repdelay$dist, ")"))
 ```
 
-```{r}
+![](ern_Testing_files/figure-gfm/unnamed-chunk-4-1.png)<!-- -->
+
+``` r
 plot_dist(dist.incub) + labs(title = paste0("Mean incubation period distribution (", dist.incub$dist, ")"))
 ```
 
-```{r}
+![](ern_Testing_files/figure-gfm/unnamed-chunk-5-1.png)<!-- -->
+
+``` r
 plot_dist(dist.gi) + labs(title = paste0("Mean generation interval distribution (", dist.gi$dist, ")"))
 ```
 
-```{r}
+![](ern_Testing_files/figure-gfm/unnamed-chunk-6-1.png)<!-- -->
+
+``` r
 #Note that the above dist.x lists define families of distributions (there is uncertainty specified in the mean distribution parameters), while plot_dist() only plots the mean distribution in this family.
 ```
 
 ### Specifying parameters
 
-```{r}
+``` r
 #The data set we are working with reports COVID-19 on a weekly basis, which is substantially longer than the typical generation interval of about 5 days for SAR-CoV-2. ern will estimate daily incidence from non-daily data. We specify the settings for this inference via prm.daily
 
 #setting for daily report inference
@@ -119,7 +128,7 @@ prm.daily = list(
 )
 ```
 
-```{r}
+``` r
 #After the inference of the daily reports is performed, a check is run to ensure that the posterior aggregated daily reports are not too different from the observed aggregated reports (given as input). The parameter agg.reldiff.tol is the maximum tolerance (as a percentage) accepted for the relative difference between the observed and posterior aggregates
 
 #settings for checks of daily inferred reports 
@@ -129,7 +138,7 @@ prm.daily.check = list(
 )
 ```
 
-```{r}
+``` r
 #Choosing a number of MCMC iterations that is not very large (to avoid long computation times, for example) may lead to daily report posteriors that are not very smooth. This, in turn, can affect the quality of Rt estimates. Hence, ern provides a smoothing of the posterior daily reports in order to improve the quality of Rt inference. The smoothing parameters are defined as follows
 
 #smoothing settings for daily inferred reports 
@@ -141,7 +150,7 @@ prm.smooth = list(
 )
 ```
 
-```{r}
+``` r
 #We specify the parameters for the Rt ensemble
 
 # Rt settings
@@ -153,7 +162,7 @@ prm.R = list(
 )
 ```
 
-```{r}
+``` r
 #once the above inputs and parameters re defined, we estimate Rt as follows:
 
 r.estim = estimate_R_cl(
@@ -170,9 +179,11 @@ r.estim = estimate_R_cl(
 )
 ```
 
-```{r}
+``` r
 #the output of estimate_R_cl() can be visualized readily using plot_diagnostic_cl(), which generates a figure with the following panels
 
 g = plot_diagnostic_cl(r.estim)
 plot(g)
 ```
+
+![](ern_Testing_files/figure-gfm/unnamed-chunk-13-1.png)<!-- -->
