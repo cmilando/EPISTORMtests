@@ -2,7 +2,7 @@
 title: "epitrix Testing"
 author: "Christine Sangphet"
 date: "2024-06-26"
-output: html_document
+output: github_document
 ---
 
 ```{r setup, include=FALSE}
