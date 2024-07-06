@@ -1,0 +1,102 @@
+---
+title: "EpiILMCT Testing"
+author: "Christine Sangphet"
+date: "2024-07-06"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#load environment 
+
+library(EpiILMCT)
+```
+
+# Simulation
+
+### Contact networking: Different types of undirected unweighted contact networks can be generated through the function ***contactnet***
+
+```{r}
+set.seed(22)
+
+#to generate the XY coordinates of 50 individuals:
+
+loc<- matrix(cbind(runif(50, 0, 10),runif(50, 0, 10)), ncol = 2, nrow = 50)
+```
+
+```{r}
+#power-law spatial contact network
+
+net1<- contactnet(type = "powerlaw", location = loc, beta = 1.5, 
+	nu = 0.5)
+plot(net1)
+```
+
+```{r}
+#Cauchy spatial contact network
+
+net2<- contactnet(type = "Cauchy", location = loc, beta = 0.5)
+plot(net2)
+```
+
+```{r}
+#random contact network
+
+net3<- contactnet(type = "random", num.id = 50, beta = 0.08)
+plot(net3)  # the default options in igraph package.
+plot(net3, vertex.color = "red", vertex.size = 15, edge.color = "black",
+vertex.label.cex = 1, vertex.label.color = "black") 
+```
+
+### Epidemic data: The function ***datagen*** allows the user to generate epidemics from the continuous time ILMs under the SIR or SINR compartmental frameworks
+
+```{r}
+set.seed(91938)
+
+# To simulate the XY coordinate of 50 individuals and their corresponding binary covariate values:
+
+loc <- matrix(cbind(runif(50, 0, 10), runif(50, 0, 10)), ncol = 2, nrow = 50)
+cov <- cbind(rep(1, 50), rbinom(50, 1, 0.5))
+
+# To simulate the contact network:
+
+net <- contactnet(type = "powerlaw", location = loc, beta = 1.8, nu = 1)
+
+# To simulate the epidemic:
+
+epi <- datagen(type = "SIR", kerneltype = "network", kernelmatrix = net, suspar = c(0.08, 0.5), delta = c(4, 2), 
+   suscov = cov)
+```
+
+```{r}
+plot(epi, plottype = "propagation", time.index = seq_len(6))
+plot(epi, plottype = "history")
+```
+
+### Analyzing
+
+```{r}
+#The following commands are to perform the MCMC for analyzing the above epidemic data set using the epictmcmc function
+
+suscov <- list(NULL)
+suscov[[1]] <- list(c(0.01, 0.1), matrix(c("gamma", "gamma", 1, 1, 0.1, 0.1, 0.5, 1), ncol = 4, nrow = 2))
+suscov[[2]] <- cov
+mcmc1 <- epictmcmc(object = epi, datatype = "known epidemic", nsim = 150000, control.sus = suscov)
+```
+
+```{r}
+#The estimates of the model parameters can be then obtained either through using S3 summary function of the epictmcmc for the mcmc1, or using the summary function of coda package for mcmc1$parameter.samples
+
+#The posterior means and 95% credible intervals of the model parameters using the former summary can be obtained via the following command
+
+summary(mcmc1, start = 10000)
+```
+
+```{r}
+#The MCMC trace plots for the model parameters can be produced using the S3 method plot.epictmcmc as follows
+
+plot(mcmc1, plottype = "parameter", start = 10000, thin = 10, density = FALSE)
+```

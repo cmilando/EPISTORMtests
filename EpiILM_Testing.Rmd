@@ -1,0 +1,166 @@
+---
+title: "EpiILM Testing"
+author: "Christine Sangphet"
+date: "2024-07-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#load environment
+
+library(EpiILM)
+
+# install.packages("devtools")
+
+devtools::install_github("waleedalmutiry/EpiILMCT-package")
+```
+
+# Spacial-based ILMs
+
+```{r}
+#We start with generating the XY coordinates of 256 individuals coordinates uniformly across a 10 by 10 unit square area. This simulated population is for illustrative purposes, the population data usually being imported for real problems
+
+set.seed(789)
+
+# generating the XY coordinates of individuals:
+
+x  <-  runif(256,  0, 100)
+y  <-  runif(256,  0, 100)
+```
+
+```{r}
+#We consider the SI spatial-based ILMs with one susceptibility covariate and no transmissibility covariates to be simulated from. First, let us generate a susceptibility covariate
+
+A <- round(rexp(256, 1/100))
+```
+
+```{r}
+#We can then generate the epidemic with two susceptibility parameters (sus.par), and one spatial parameter (beta)
+
+out_cov <- epidata(type = "SI", n = 256, tmax = 10, x = x, y = y, 
+    Sformula = ~A, sus.par = c(0.01, 0.05), beta = 2)
+out_cov
+```
+
+```{r}
+#illustrate the spread of the epidemic over time using curvetype
+
+par(mfrow=c(2, 2))
+plot(out_cov, plottype = "curve", curvetype = "complete")
+plot(out_cov, plottype = "curve", curvetype = "susceptible")
+plot(out_cov, plottype = "curve", curvetype = "totalinfect")
+plot(out_cov, plottype = "curve", curvetype = "newinfect")
+plot(out_cov, plottype = "spatial")
+```
+
+```{r}
+#Now, we show how to perform an MCMC analysis through the use of the epimcmc function that depends on the MCMC function from the adaptMCMC package
+
+#to assign the tmax value of the epidemic
+
+t_end <- max(out_cov$inftime)
+
+#to assign prior distribution for the model parameters
+
+unif_range <- matrix(c(0, 0, 1, 1), nrow =  2, ncol =  2)
+
+#to perform the MCMC analysis
+
+mcmcout_M8 <- epimcmc(out_cov, Sformula = ~A,
+    tmax = t_end, niter = 50000,
+    sus.par.ini = c(0.03, 0.005), beta.ini = 2,
+    pro.sus.var = c(0.005, 0.005), pro.beta.var = 0.01,
+    prior.sus.dist = c("uniform", "uniform"), 
+    prior.sus.par = unif_range,
+    prior.beta.dist = "uniform", prior.beta.par = c(0, 10),
+    adapt = TRUE, acc.rate = 0.5)
+            
+summary(mcmcout_M8, start = 1001)
+plot(mcmcout_M8, partype = "parameter", density = FALSE )
+```
+
+# Network-based ILM's
+
+```{r}
+#Now we consider SIR network-based ILMs containing both susceptibility and transmissibility covariates. So, we start with generating an undirected binary contact network for a population of 500 individuals (for illustration)
+
+set.seed(101)
+# sample size
+n <- 500
+# Generating an undirected binary contact network:
+contact <- matrix(0, n, n)
+for(i in 1:(n-1)) {
+	contact[i, ((i+1):n)] <- rbinom((n-i), 1, 0.05)
+	contact[((i+1):n), i] <- contact[i, ((i+1):n)]
+	}
+```
+
+```{r}
+#we generate two covariates to be used as susceptibility covariates. We will also use these covariates as transmissibility covariates. As we are now in an SIR framework, we have to set the infectious period for each infective. Here, we set the infectious period to be three time points for each infected individual. The rest of the analysis follows the general framework we saw for spatial ILMs
+
+#Generating the susceptibility and transmissibility covariates
+
+library(EpiModel)
+
+X1 <- round(rexp(n, 1/100))
+X2 <- round(rgamma(n, 50, 0.5))
+
+#Simulate epidemic form SIR network-based ILM
+
+infp <- rep(3, n)
+SIR.net <- epidata(type = "SIR", n = 500, tmax = 50, 
+    sus.par = c(0.003, 0.002), trans.par = c(0.0003, 0.0002), 
+    contact = contact, infperiod = infp,
+    Sformula = ~ -1 + X1 + X2, Tformula = ~ -1 + X1 + X2)
+
+# Epidemic curve for SIR.net
+
+plot(SIR.net, plottype = "curve", curvetype = "complete")
+```
+
+```{r}
+# epimcmc function to estimate the model parameters:
+t_end <- max(SIR.net$inftime)
+prior_par <- matrix(rep(1, 4), ncol = 2, nrow = 2)
+# This took 305.7 seconds on an Apple MacBook Pro with i5-core Intel 2.4 GHz 
+# processors with 8 GB of RAM.
+mcmcout_SIR.net <- epimcmc(SIR.net, tmax = t_end, niter = 20000,
+    Sformula = ~-1 + X1 + X2, Tformula = ~-1 + X1 + X2,  
+    sus.par.ini = c(0.003, 0.01), trans.par.ini = c(0.01, 0.01),
+    pro.sus.var = c(0.0, 0.1), pro.trans.var = c(0.1, 0.1),
+    prior.sus.dist = c("gamma", "gamma"), prior.trans.dist = c("gamma", "gamma"), 
+    prior.sus.par = prior_par, prior.trans.par = prior_par,
+    adapt = TRUE, acc.rate = 0.5)
+# Summary of MCMC results
+summary(mcmcout_SIR.net, start = 10001) 
+plot(mcmcout_SIR.net, partype = "parameter", start = 10001, density = FALSE)
+```
+
+```{r}
+#We can also consider forecasting from a fitted model. Here we see two examples, one uses data up to time point 5 to fit the model and then forecasts forward using a posterior predictive approach. The second does the same but using data up to time point 14 to fit the model before predicting forwards in time.
+
+# Posterior predictive forecasting
+# Posterior prediction starting from time point 5
+
+pred.SIR.net.point.5 <- pred.epi(SIR.net, xx = mcmcout_SIR.net, tmin = 5, 
+    Sformula = ~-1 + X1 + X2, Tformula = ~-1 + X1 + X2,  
+    burnin = 1000, criterion = "newly infectious", 
+    n.samples = 500)
+
+# Posterior prediction starting from time point 14
+
+pred.SIR.net.point.8 <- pred.epi(SIR.net, xx = mcmcout_SIR.net, tmin = 14, 
+    Sformula = ~-1 + X1 + X2, Tformula = ~-1 + X1 + X2,  
+    burnin = 1000, criterion = "newly infectious", 
+    n.samples = 500)
+
+# plot predictions
+
+par(mfrow = c(2,1))
+plot(pred.SIR.net.point.5, col = "red", lwd = 2, pch = 19)
+plot(pred.SIR.net.point.8, col = "red", lwd = 2, pch = 19)
+```
