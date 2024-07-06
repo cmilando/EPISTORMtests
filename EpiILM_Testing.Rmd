@@ -2,7 +2,7 @@
 title: "EpiILM Testing"
 author: "Christine Sangphet"
 date: "2024-07-06"
-output: html_document
+output: github_document
 ---
 
 ```{r setup, include=FALSE}
