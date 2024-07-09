@@ -1,0 +1,144 @@
+---
+title: "epigrowthfit Testing"
+author: "Christine Sangphet"
+date: "2024-07-03"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#load environment
+
+library(epigrowthfit)
+```
+
+# finalsize(): compute the expected epidemic
+
+```{r}
+R0 <- 10^seq(-3, 1, length.out = 151L)
+plot(R0, finalsize(R0, S0 = 1, I0 = 0), type = "l", las = 1,
+xlab = "basic reproduction number",
+ylab = "final size")
+```
+
+# gi(): generation interval distribution
+
+```{r}
+latent <- c(0.026, 0.104, 0.182, 0.246, 0.318, 0.104,
+0.013, 0.004, 0.003)
+m <- length(latent)
+
+infectious <- c(0.138, 0.462, 0.256, 0.078, 0.041, 0.007,
+0.004, 0.004, 0.006, 0.004)
+n <- length(infectious)
+```
+
+```{r}
+#histogram of samples
+
+y <- rgi(1e06, latent, infectious)
+hist(y, breaks = seq(0, m + n + 1), freq = FALSE, las = 1,
+ylab = "relative frequency",
+main = "")
+```
+
+```{r}
+#density and distribution functions
+
+x <- seq(0, m + n + 1, by = 0.02)
+fx <- dgi(x, latent, infectious)
+Fx <- pgi(x, latent, infectious)
+plot(x, fx, type = "l", las = 1, # consistent with histogram
+xlab = "generation interval",
+ylab = "density function")
+
+plot(x, Fx, type = "l", las = 1,
+xlab = "generation interval",
+ylab = "distribution function")
+```
+
+```{r}
+#quantile function
+p <- seq(0, 1, by = 0.001)
+qp <- qgi(p, latent, infectious)
+
+plot(p, qp, type = "l", las = 1,
+xlab = "probability",
+ylab = "quantile function")
+```
+
+# plot.egf: plot nonlinear mixed effects models of epidemic growth
+
+```{r}
+example("egf", package = "epigrowthfit")
+l <- list(legend = list(cex = 0.8),
+value = list(cex = 0.8, font = 2),
+ci = list(cex = 0.8))
+control <- egf_control_plot(doubling = l)
+op <- par(mar = c(3.5, 5, 5, 1))
+plot(m1,
+type = "interval",
+show_predict = 2L,
+show_doubling = 2L,
+control = control)
+```
+
+```{r}
+plot(m1,
+type = "cumulative",
+main = "Fitted exponential model",
+sub = quote(paste("Country", country)))
+par(op)
+op <- par(mar = c(3.5, 9.5, 5, 1))
+plot(m1, type = "rt", subset = quote(country %in% LETTERS[4:6]))
+par(op)
+```
+
+# R0(): compute the basic reproduction number
+
+```{r}
+r <- seq(0, 1, 0.02)
+breaks <- seq(0, 20, 1)
+probs <- diff(pgamma(breaks, shape = 1, scale = 2.5))
+plot(r, R0(r, breaks, probs), las = 1,
+xlab = "initial exponential growth rate",
+ylab = "basic reproduction number")
+```
+
+# simulate.egf(): simulation and parametric bootstrapping
+
+### Simulates incidence data conditional on a fitted nonlinear mixed effects model of epidemic growth
+
+```{r}
+example("egf", package = "epigrowthfit")
+zz <- simulate(m2, nsim = 6L, seed = 181952L, bootstrap = TRUE)
+str(zz)
+matplot(t(zz[["bootstrap"]][!m2[["random"]], ]),
+type = "o", las = 1, xlab = "simulation", ylab = "value")
+```
+
+# simulate.egf_model(): simulating incidence time series
+
+### Simulates equally spaced incidence time series according to a specified nonlinear model
+
+```{r}
+r <- 0.04
+c0 <- 400
+s <- 0.2
+mu <- log(c(r, c0))
+Sigma <- diag(rep.int(s^2, length(mu)))
+zz <- simulate(object = egf_model(curve = "exponential", family = "pois"),
+nsim = 20L,
+seed = 202737L,
+mu = mu,
+Sigma = Sigma,
+cstart = 10)
+
+str(zz)
+
+mm <- egf(zz)
+(pp <- cbind(actual = coef(zz), fitted = coef(mm)))
+```
