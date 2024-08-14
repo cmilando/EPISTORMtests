@@ -1,0 +1,525 @@
+---
+title: "epinowcast testing"
+author: "Christine Sangphet"
+date: "2024-07-27"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#load environment
+
+library(epinowcast)
+library(data.table)
+library(purrr)
+library(ggplot2)
+```
+
+# Estimating the effective reproduction number in real-time for a single timeseries with reporting delays
+
+## Introducing the data: COVID-19 hospitalizations in Germany
+
+### Overview
+
+```{r}
+summary(germany_covid19_hosp)
+```
+
+```{r}
+#In this case study we only consider national level data without stratification by age group. We can filter these data using `data.table`
+
+germany_hosp <- germany_covid19_hosp[location == "DE"][age_group == "00+"]
+germany_hosp <- germany_hosp[, .(reference_date, report_date, confirm)]
+germany_hosp
+```
+
+### Data transformations
+
+```{r}
+#we could convert the data to a individual case linelist
+
+germany_covid19_hosp_linelist <- germany_covid19_hosp |>
+  enw_add_incidence() |>
+  enw_incidence_to_linelist()
+
+germany_covid19_hosp_linelist
+```
+
+```{r}
+#This linelist could then be itself converted into the format `epinowcast` 
+#requires using the `enw_linelist_to_incidence()` function
+
+incidence_from_linelist <- enw_linelist_to_incidence(
+  germany_covid19_hosp_linelist,
+  reference_date = "reference_date",
+  report_date = "report_date",
+  by = c("age_group", "location"),
+  max_delay = 30
+)
+
+incidence_from_linelist
+```
+
+```{r}
+#For this case study we will only consider data from the 1st of March 2020 onwards
+#As a first step, we filter the data to only include observations from the 1st of May 2021 until the 1st of August 2021. 
+#We do this using the `enw_filter_report_dates()` and `enw_filter_reference_dates()` functions
+
+complete_germany_hosp <- germany_hosp |>
+  enw_filter_report_dates(latest_date = "2021-08-01") |>
+  enw_filter_reference_dates(earliest_date = "2021-05-01") |>
+  enw_complete_dates(missing_reference = FALSE) |>
+  enw_add_incidence()
+```
+
+```{r}
+#Next we split the data into two parts, the data that was available at the time and that will be used to fit the model (`rt_nat_germany`) and the data that was available retrospectively about the same time period will be used to evaluate the model (`retro_nat_germany`). 
+#We do this using the `enw_filter_report_dates()` and `enw_filter_reference_dates()` functions as follows:  
+#Create the real-time dataset (`rt_nat_germany`) by filtering the data to only include reported observations from the 1st of May 2021 until the 1st of July 2021;
+
+rt_germany <- complete_germany_hosp |>
+  enw_filter_report_dates(latest_date = "2021-07-01")
+rt_germany
+```
+
+```{r}
+#Create the retrospective dataset (`retro_germany`) by filtering the data to only include observations with reference dates (i.e. they may have been reported anytime up to the 1st of August 2021) from the 1st of May 2021 until the 1st of July 2021
+
+retro_germany <- complete_germany_hosp |>
+  enw_filter_reference_dates(latest_date = "2021-07-01")
+retro_germany
+```
+
+```{r}
+#we can create a dataset that contains the latest data available for each reference date. We do this using the `enw_latest_data()` function
+
+latest_germany_hosp <- retro_germany |>
+  enw_latest_data()
+head(latest_germany_hosp, n = 10)
+```
+
+### Visualising the data
+
+```{r}
+#Before we define, or fit, a model we should visualise the data to get an idea of the trends in the data and its reporting structure. There is currently no function in `epinowcast` to visualise the data, but we can use the `ggplot2` package to do this manually
+
+gh_vis_cohorts <- copy(retro_germany)[
+  ,
+  report_date := fcase(
+    report_date <= as.Date("2021-05-15"), as.Date("2021-05-15"),
+    report_date <= as.Date("2021-06-01"), as.Date("2021-06-01"),
+    report_date <= as.Date("2021-06-15"), as.Date("2021-06-15"),
+    report_date <= as.Date("2021-07-01"), as.Date("2021-07-01"),
+    report_date <= as.Date("2021-07-15"), as.Date("2021-07-15"),
+    report_date <= as.Date("2021-08-01"), as.Date("2021-08-01")
+  ) |>
+    factor(levels = rev(c(
+      "2021-05-15", "2021-06-01", "2021-06-15", "2021-07-01",
+      "2021-07-15", "2021-08-01"
+    )))
+]
+
+gh_vis_cohorts_by_reference <- gh_vis_cohorts[,
+  .(confirm = sum(new_confirm)),
+  by = .(reference_date)
+]
+
+gh_vis_cohorts_by_ref_rep <- gh_vis_cohorts[,
+  .(confirm = sum(new_confirm)),
+  by = .(reference_date, report_date)
+]
+
+gh_vis_cohorts_by_ref_rep |>
+  ggplot() +
+  aes(
+    x = reference_date, y = confirm, fill = report_date, group = report_date
+  ) +
+  geom_col(position = "stack", alpha = 1, col = "grey") +
+  geom_vline(
+    aes(xintercept = as.Date(report_date)),
+    linetype = 2, alpha = 0.9
+  ) +
+  scale_y_continuous(labels = \(x)(scales::comma(x, accuracy = 1))) +
+  scale_fill_brewer(
+    palette = "Blues", aesthetics = c("color", "fill")
+  ) +
+  theme_bw() +
+  labs(
+    x = "Date of positive test",
+    y = "Hospitalized cases by date of positive test",
+    fill = "Report date"
+  ) +
+  guides(fill = guide_legend(reverse = TRUE)) +
+  theme(legend.position = "bottom")
+```
+
+## Model
+
+#### Specifying the model using `epinowcast::enw_expectation()`
+
+```{r}
+#We first need to define the weekly random walk model for the effective reproduction number. We can do this using the formula interface:
+
+rt_formula <- ~ 1 + rw(week)
+```
+
+```{r}
+#Next we define the generation time distribution.
+#we assume a gamma distribution with mean 4 days and a standard deviation of 3 days. 
+#These summary parameters first need to be transformed to the shape and scale parameters used for the gamma distribution.
+#We then need to account for daily censoring and finally normalise the probability mass function (PMF) to account for right truncation.
+
+# first transform mean and sd to shape and scale
+
+gamma_mean <- 4
+gamma_sd <- 3
+gamma_shape <- gamma_mean^2 / gamma_sd^2
+gamma_scale <- gamma_sd^2 / gamma_mean
+
+# then discretise the distribution
+
+gt_pmf <- simulate_double_censored_pmf(
+  max = 15, shape = gamma_shape, scale = gamma_scale, fun_dist = rgamma
+) |>
+# and normalise it to account for right truncation
+  
+  (\(x) x / sum(x))()
+
+plot(gt_pmf)
+```
+
+```{r}
+#Now we define the latent reporting delay in a similar way remembering we specified a lognormal distribution with a mean of 5 days and a standard deviation of 2 days
+#We again also need to account for daily censoring and normalise the PMF to account for right truncation
+
+lgn_mean <- 5
+lgn_sd <- 2
+meanlog <- log(lgn_mean^2 / sqrt(lgn_sd^2 + lgn_mean^2))
+sdlog <- sqrt(log(1 + lgn_sd^2 / lgn_mean^2))
+
+# then discretise the distribution
+reporting_pmf <- simulate_double_censored_pmf(
+  max = 15, meanlog = meanlog, sdlog = sdlog, fun_dist = rlnorm
+) |>
+# normalise it to account for right truncation
+  (\(x) x / sum(x))() |>
+# and scale it by the infection to hospitalization ration (2%)
+  (\(x) x * 0.02)()
+
+plot(reporting_pmf)
+```
+
+```{r}
+#The last part of the model to define is the remaining part of the ascertainment model for expected hospitalizations
+#As we have already defined the base ascertainment ratio (i.e. the 2% infection to hospitalization ratio) we only need to define the day of the week random effec
+#We can do this using the formula interface:
+
+observation_formula <- ~ 1 + (1 | day_of_week)
+```
+
+```{r}
+#we can combine these four parts of the model to define the expected hospitalizations by date of positive test
+#We do this using the `epinowcast::enw_expectation()` function
+
+expectation_module <- partial(
+  epinowcast::enw_expectation,
+  r = rt_formula,
+  generation_time = gt_pmf,
+  latent_reporting_delay = reporting_pmf,
+  observation = observation_formula
+)
+```
+
+### Delay Distribution
+
+#### Specifying the model using `epinowcast::enw_reference()`
+
+```{r}
+#We can define the reporting delay distribution using the `epinowcast::enw_reference()` function
+
+reference_module <- partial(enw_reference, ~1, distribution = "lognormal")
+```
+
+### Observation mocel and nowcast
+
+#### Specifying the model using `epinowcast::enw_obs()`
+
+```{r}
+obs_module <- partial(enw_obs, family = "poisson")
+```
+
+## Fitting the model to COVID-19 hospitalizations in Germany
+
+### Preprocess the data
+
+```{r}
+#Before fitting the model we have just defined we need to preprocess the data in order for it to be in the correct format to work with `epinowcast` and to produce metadata that describes aspects of the data we use in the model (for example the maximum delay, the number of groups, and the number of observations in each group). 
+#We do this using the `enw_preprocess_data()` function for both the real-time and retrospective datasets. 
+#Note that we set `max_delay = 30` to constrain the modelled maximum delay to 30 days. This is a pragmatic choice to ensure that the model can be fit in a reasonable amount of time, but we could also set this to be longer if we wanted to and if the data suggested a longer delay was possible.
+
+rt_germany_pobs <- enw_preprocess_data(rt_germany, max_delay = 30)
+rt_germany_pobs
+```
+
+```{r}
+#and do the same for retrospective data
+
+retro_germany_pobs <- enw_preprocess_data(retro_germany, max_delay = 30)
+retro_germany_pobs
+```
+
+### Fitting the 'epinowcast' model
+
+#### Specifying the fitting options
+
+```{r}
+#Before we are ready to fit the model we need to first specify some fitting options for using `cmdstanr`
+#We use 2 chains with 2 threads per chain (so using 4 CPU cores in total) 500 warmup samples and 1000 iterations per chain
+#As this is a complex model we set `adapt_delta` to 0.98 (the default is 0.8) so that the Hamiltonian Monte Carlo sampler can explore the posterior distribution more efficiently
+#For the same reason, we have also set the `max_treedepth` to 15 (the default is 10)
+#we set `save_warmup` to `FALSE` to save space (we don't need the warmup samples for this analysis), and `pp` to `TRUE` so that we can use posterior predictive checks to assess the model fit.
+
+library(cmdstanr)
+
+fit_module <- partial(enw_fit_opts,
+  chains = 2,
+  parallel_chains = 2,
+  threads_per_chain = floor(min(max(1, parallel::detectCores() /  4), 2)),
+  iter_warmup = 500,
+  iter_sampling = 1000,
+  adapt_delta = 0.95,
+  max_treedepth = 12,
+  save_warmup = FALSE,
+  pp = TRUE,
+  show_messages = FALSE, # set this to TRUE to show fitting messages
+  refresh = 0 # remove this to show fitting progress
+)
+```
+
+#### Compiling the model
+
+```{r}
+#We also need to compile the model using `cmdstanr` before fitting it (we only have to do this once after installing the package)
+
+epinowcast_model <- enw_model(profile = FALSE)
+```
+
+#### Fitting the model
+
+```{r}
+#Now we are ready to bring together all the modules we have specified, combine them with the model we have just compiled, and fit our synthetic data
+#We first fit to the data that would have been available in real-time
+
+germany_nowcast <- epinowcast(
+  data = rt_germany_pobs,
+  expectation = expectation_module(data = rt_germany_pobs),
+  reference = reference_module(data = rt_germany_pobs),
+  obs = obs_module(data = rt_germany_pobs),
+  fit = fit_module(),
+  model = epinowcast_model
+)
+```
+
+```{r}
+#and then on the retrospectively observed data 
+
+retro_germany_nowcast <- epinowcast(
+  data = retro_germany_pobs,
+  expectation = expectation_module(data = retro_germany_pobs),
+  reference = reference_module(data = retro_germany_pobs),
+  obs = obs_module(data = retro_germany_pobs),
+  fit = fit_module(),
+  model = epinowcast_model
+)
+```
+
+### Visualizing the Nowcast
+
+#### Plotting the nowcast based on real-time data
+
+```{r}
+#we first plot the nowcast based on real-time data
+plot(
+  germany_nowcast, latest_germany_hosp[reference_date > as.Date("2021-06-01")]
+)
+```
+
+#### Plotting the nowcast based on retrospective data
+
+```{r}
+#we can also plot the nowcast based on the retrospective data
+#As this plot uses observed data where available this is effectively plotting observed data after a 30 day delay (as this was the maximum we specified) compared to data that will ultimately be observed
+#Here we see that a small number of hospitalizations will be reported after 30 days
+#This will impact the performance of even an ideal model as it will not be able to predict these hospitalizations and so should be accounted for in the model evaluation.
+
+plot(
+  retro_germany_nowcast,
+  latest_germany_hosp[reference_date > as.Date("2021-06-01")]
+)
+```
+
+### Posterior predictions for cases by date of positive test and report
+
+```{r}
+#To better understand the fit of the model to data we can instead plot the posterior predictions for the observed data. 
+#This is effectively the same as the plot above but instead of plotting the posterior predictions for the unobserved data we plot the posterior predictions for the observed data.
+#we use `enw_plot_pp_quantiles()` so we can control the number of references dates we plot 
+
+plot_select_pp_dates <- function(nowcast, dates) {
+  nowcast |>
+    summary(type = "posterior_prediction") |>
+    (\(x) x[reference_date %in% dates])() |>
+    enw_plot_pp_quantiles() +
+    facet_wrap(vars(reference_date), scales = "free")
+}
+plot_select_pp_dates(
+  retro_germany_nowcast,
+  as.Date(c("2021-05-01", "2021-05-14", "2021-06-01", "2021-07-01"))
+)
+```
+
+### Real-time and retrospective estimates of the effective reproduction number
+
+```{r}
+#We can plot this for both the real-time and retrospective data to see how the estimates change as more data becomes available.
+#Ideally, we would hope that the real-time estimates would overlap with the retrospective estimates. This would indicate that our model is able to accurately estimate hospitalizations that will be ultimately reported based on those that have already been reported.
+
+get_rt_posterior <- function(nowcast, expectation = expectation_module) {
+  rt <- enw_posterior(nowcast$fit[[1]], variables = "r")
+  cols <- c("mean", "median", "q5", "q20", "q80", "q95")
+  rt[, (cols) := lapply(.SD, exp), .SDcols = cols]
+  rt <- cbind(
+    expectation(data = nowcast)$data_raw$r[, .(date)], rt
+  )
+  return(rt)
+}
+
+rt <- rbind(
+  get_rt_posterior(germany_nowcast)[, Data := "Real-time"],
+  get_rt_posterior(retro_germany_nowcast)[, Data := "Retrospective"]
+)
+
+ggplot(rt) +
+  aes(x = date, col = Data, fill = Data) +
+  geom_line(aes(y = median), linewidth = 1, alpha = 0.6) +
+  geom_line(aes(y = mean), linetype = 2) +
+  geom_ribbon(aes(ymin = q5, ymax = q95), alpha = 0.2, linewidth = 0.2) +
+  geom_ribbon(aes(ymin = q20, ymax = q80, col = NULL), alpha = 0.2) +
+  geom_hline(yintercept = 1, linetype = 2) +
+  scale_y_continuous(trans = "log") +
+  scale_fill_brewer(palette = "Dark2", aesthetics = c("color", "fill")) +
+  theme_bw() +
+  labs(
+    x = "Date of infection",
+    y = "Effective reproduction number"
+  ) +
+  theme(legend.position = "bottom")
+```
+
+### Estimates of the delay from testing positive to hospitalization both in real-time and retrospectively
+
+```{r}
+#We can also plot the posterior distribution of the delay from testing positive to hospitalization.
+#This is the delay that is used to estimate the number of hospitalizations that will ultimately be reported based on the number of positive tests that have been reported. 
+#We can plot this for both the real-time and retrospective data to see how the estimates change as more data becomes available.
+
+extract_epinowcast_cdf <- function(nowcast) {
+  draws <- nowcast |>
+    (\(x)
+      x$fit[[1]]$draws(variables = c("refp_mean", "refp_sd"), format = "df")
+    )() |>
+    as.data.table()
+
+  draws[
+    ,
+    cdf := purrr::map2(
+      `refp_mean[1]`, `refp_sd[1]`,
+      ~ data.table(
+        delay = 1:30, cdf = plnorm(1:30, .x, .y) / plnorm(30, .x, .y)
+      )
+    )
+  ]
+  draws <- draws[, rbindlist(cdf)]
+  draws <- draws[,
+    .(
+      mean = mean(cdf),
+      lower_90 = quantile(cdf, probs = 0.05),
+      upper_90 = quantile(cdf, probs = 0.95)
+    ),
+    by = "delay"
+  ]
+}
+
+nowcast_cdf <- list(
+  "Real-time" = germany_nowcast,
+  "Retrospective" = retro_germany_nowcast
+) |>
+  map(extract_epinowcast_cdf) |>
+  rbindlist(idcol = "Data")
+
+ggplot(nowcast_cdf) +
+  aes(x = delay, y = mean, col = Data, fill = Data) +
+  geom_line(size = 1.1, alpha = 0.7) +
+  geom_ribbon(
+    aes(ymin = lower_90, ymax = upper_90),
+    alpha = 0.25
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom") +
+  scale_fill_brewer(palette = "Dark2", aesthetics = c("color", "fill")) +
+  guides(
+    fill = guide_legend(nrow = 1),
+    col = guide_legend(nrow = 1)
+  ) +
+  labs(
+    x = "Delay between positive test and hospitalization",
+    y = "Cumulative density function of the reporting distribution"
+  )
+```
+
+### Estimates of the number of expected hospitalizations both in real-time and retrospectively
+
+```{r}
+#We can also plot the posterior predictions for the number of expected hospitalizations. This is the number of hospitalizations that would be reported if there was no observation error. We can compare this to the number of hospitalizations that are ultimately reported to see how well the model is doing. 
+get_expected_infections <- function(nowcast, expectation = expectation_module) {
+  exp_cases <- enw_posterior(
+    nowcast$fit[[1]],
+    variables = "exp_lobs"
+  )
+  cols <- c("mean", "median", "q5", "q20", "q80", "q95")
+  exp_cases[, (cols) := lapply(.SD, exp), .SDcols = cols]
+  exp_cases <- cbind(
+    expectation(data = nowcast)$data_raw$observation,
+    exp_cases
+  )
+  return(exp_cases)
+}
+
+exp_cases <- rbind(
+  get_expected_infections(germany_nowcast)[, Data := "Real-time"],
+  get_expected_infections(retro_germany_nowcast)[, Data := "Retrospective"]
+)
+
+exp_cases <- enw_latest_data(germany_hosp)[, date := reference_date][
+  exp_cases,
+  on = "date"
+]
+
+ggplot(exp_cases) +
+  aes(x = date, fill = Data, col = Data) +
+  geom_point(aes(y = confirm), col = "Black") +
+  geom_line(aes(y = median), linewidth = 1, alpha = 0.6) +
+  geom_line(aes(y = mean), linetype = 2) +
+  geom_ribbon(aes(ymin = q5, ymax = q95), alpha = 0.2, linewidth = 0.2) +
+  geom_ribbon(aes(ymin = q20, ymax = q80, col = NULL), alpha = 0.2) +
+  theme_bw() +
+  labs(
+    x = "Date of positive test",
+    y = "Expected hospitalizations"
+  ) +
+  scale_fill_brewer(palette = "Dark2", aesthetics = c("color", "fill")) +
+  theme(legend.position = "bottom")
+```
