@@ -618,7 +618,7 @@ scale_earlyR <- 0.865384615384615
 
 # Generate a sequence of values
 
-x_earlyR <- seq(0, 10, length.out = 7)
+x_earlyR <- seq(0, 10)
 
 # Calculate the density of the gamma distribution
 
@@ -748,7 +748,7 @@ scale_epitrix <- 0.865384615384615
 
 # Define a range of values
 
-x_epitrix <- seq(0, 10, by = 2) 
+x_epitrix <- seq(0, 10)
 
 # Compute the density of the gamma distribution
 
@@ -756,7 +756,7 @@ density <- dgamma(x_epitrix, shape = shape_epitrix, scale = scale_epitrix)
 
 # Plot the distribution
 
-epitrix_si <- plot(x_epitrix, density, type = "l", lwd = 2,
+epitrix_si <- plot(x_epitrix, density, type = "l",
      xlab = "Time", ylab = "Density",
 )
 ```
@@ -836,7 +836,7 @@ si_data <- data.frame(si_distr = res_parametric_si$si_distr[0:11],
 #turn epitrix SI into dataframe
 
 time_values_epitrix <- 0:10
-gamma_values_epitrix <- dgamma(time_values_epitrix, shape = 3.00444444444445, scale = 0.865384615384615)
+gamma_values_epitrix <- dgamma(time_values_epitrix, shape = 3.004444, scale = 0.8653846)
 
 dist_gi_data_epitrix <- data.frame(time = time_values_epitrix, gi_distr = gamma_values_epitrix)
 
@@ -892,14 +892,16 @@ Flu2009$si_distr
     ##  [1] 0.000 0.233 0.359 0.198 0.103 0.053 0.027 0.014 0.007 0.003 0.002 0.001
 
 ``` r
-GT.chld.hsld1<-generation.time("empirical", c(0.000,0.233,0.359,0.198,0.103,0.053,0.027,0.014,0.007,0.003,0.002,0.001))
+GT.chld.hsld1<-generation.time("gamma", c(2.6, 1.5))
 
 GT.chld.hsld1
 ```
 
     ## Discretized Generation Time distribution
-    ## mean: 2.596 , sd: 1.534531 
-    ##  [1] 0.000 0.233 0.359 0.198 0.103 0.053 0.027 0.014 0.007 0.003 0.002 0.001
+    ## mean: 2.656065 , sd: 1.490568 
+    ##  [1] 0.0000000000 0.2347607172 0.3061130999 0.2217949514 0.1258257345
+    ##  [6] 0.0624515217 0.0284937595 0.0122689922 0.0050642269 0.0020240933
+    ## [11] 0.0007887430 0.0003011238 0.0001130366
 
 ``` r
 plot(GT.chld.hsld1)
@@ -1044,8 +1046,8 @@ si_data <- data.frame(si_distr = res_parametric_si$si_distr[0:11],
 
 #turn R0 SI into dataframe
 
-mean_gt_R0 <- 2.596
-sd_gt_R0 <- 1.534531
+mean_gt_R0 <- 2.656065
+sd_gt_R0 <- 1.490568 
 
 shape_R0 <- (mean_gt_R0 / sd_gt_R0)^2
 scale_R0 <- (sd_gt_R0^2) / mean_gt_R0
@@ -1186,7 +1188,7 @@ rate_epinow <- 1.2
 max_x_epinow <- 11
 
 # Generate data for gamma distribution
-x_epinow <- seq(0, max_x_epinow, length.out = 7)
+x_epinow <- seq(0, max_x_epinow)
 y_epinow <- dgamma(x_epinow, shape = shape_epinow, rate = rate_epinow)
 
 # Create a data frame for plotting
@@ -1240,11 +1242,11 @@ res_epinow <- epinow(reported_cases_epinow,
 
     ## Logging threshold set at INFO for the EpiNow2 logger
 
-    ## Writing EpiNow2 logs to the console and: /var/folders/kz/vb4s2bzd5m59rdxjpt9vyk_h0000gn/T//RtmprrO95S/regional-epinow/2009-05-28.log
+    ## Writing EpiNow2 logs to the console and: /var/folders/kz/vb4s2bzd5m59rdxjpt9vyk_h0000gn/T//RtmpeYplLb/regional-epinow/2009-05-28.log
 
     ## Logging threshold set at INFO for the EpiNow2.epinow logger
 
-    ## Writing EpiNow2.epinow logs to the console and: /var/folders/kz/vb4s2bzd5m59rdxjpt9vyk_h0000gn/T//RtmprrO95S/epinow/2009-05-28.log
+    ## Writing EpiNow2.epinow logs to the console and: /var/folders/kz/vb4s2bzd5m59rdxjpt9vyk_h0000gn/T//RtmpeYplLb/epinow/2009-05-28.log
 
 ``` r
 res_epinow$plots$R
@@ -1313,7 +1315,7 @@ summary(LPSfit)
     ## Estimation of the reproduction number with Laplacian-P-splines 
     ## -------------------------------------------------------------- 
     ## Total number of days:          32 
-    ## Routine time (seconds):        0.043 
+    ## Routine time (seconds):        0.042 
     ## Method:                        Maximum a posteriori (MAP) 
     ## Hyperparam. optim method:      Nelder-Mead 
     ## Hyperparam. optim convergence: TRUE 
@@ -1402,19 +1404,20 @@ plot_all
 
 ![](Package_Estimations_files/figure-gfm/unnamed-chunk-64-1.png)<!-- -->
 
-NOTE: Notice that the SI from Epitrix doesn’t appear on the graph.
-Here’s why:
+NOTE: Notice that the SI from Epitrix and earlyR doesn’t appear on the
+graph. Here’s why:
 
 ``` r
 plot_all_test3 <- ggplot() +
   geom_line(data = si_data, aes(x = time, y = si_distr, color = "EpiEstim"), size = 1) +
   geom_line(data = dist_gi_data_epitrix, aes(x = time_values_epitrix, y = gamma_values_epitrix, color = "epitrix"), size = 1) +
+  geom_line(data = si_df_earlyR, aes(x = x_earlyR, y = y_earlyR, color = "earlyR"), size = 1) +
   geom_line(data = epiLPS_data, aes(x = time_values_LPS, y = gamma_values_LPS, color = "EpiLPS"), size = 1) +
   scale_color_manual(name = "Legend", values = c("EpiEstim" = "blue4", 
                                                 
                                                 
                                                  "epitrix" = "gold1",
-                                               
+                                                "earlyR" = "seagreen2",
                                               
                                                  "EpiLPS" = "cornflowerblue")) +
   

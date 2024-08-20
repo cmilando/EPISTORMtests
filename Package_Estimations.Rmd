@@ -373,7 +373,7 @@ scale_earlyR <- 0.865384615384615
 
 # Generate a sequence of values
 
-x_earlyR <- seq(0, 10, length.out = 7)
+x_earlyR <- seq(0, 10)
 
 # Calculate the density of the gamma distribution
 
@@ -478,7 +478,7 @@ scale_epitrix <- 0.865384615384615
 
 # Define a range of values
 
-x_epitrix <- seq(0, 10, by = 2) 
+x_epitrix <- seq(0, 10)
 
 # Compute the density of the gamma distribution
 
@@ -486,7 +486,7 @@ density <- dgamma(x_epitrix, shape = shape_epitrix, scale = scale_epitrix)
 
 # Plot the distribution
 
-epitrix_si <- plot(x_epitrix, density, type = "l", lwd = 2,
+epitrix_si <- plot(x_epitrix, density, type = "l",
      xlab = "Time", ylab = "Density",
 )
 epitrix_si
@@ -540,7 +540,7 @@ si_data <- data.frame(si_distr = res_parametric_si$si_distr[0:11],
 #turn epitrix SI into dataframe
 
 time_values_epitrix <- 0:10
-gamma_values_epitrix <- dgamma(time_values_epitrix, shape = 3.00444444444445, scale = 0.865384615384615)
+gamma_values_epitrix <- dgamma(time_values_epitrix, shape = 3.004444, scale = 0.8653846)
 
 dist_gi_data_epitrix <- data.frame(time = time_values_epitrix, gi_distr = gamma_values_epitrix)
 
@@ -588,7 +588,7 @@ Flu2009$si_distr
 ```
 
 ```{r}
-GT.chld.hsld1<-generation.time("empirical", c(0.000,0.233,0.359,0.198,0.103,0.053,0.027,0.014,0.007,0.003,0.002,0.001))
+GT.chld.hsld1<-generation.time("gamma", c(2.6, 1.5))
 
 GT.chld.hsld1
 plot(GT.chld.hsld1)
@@ -653,8 +653,8 @@ si_data <- data.frame(si_distr = res_parametric_si$si_distr[0:11],
 
 #turn R0 SI into dataframe
 
-mean_gt_R0 <- 2.596
-sd_gt_R0 <- 1.534531
+mean_gt_R0 <- 2.656065
+sd_gt_R0 <- 1.490568 
 
 shape_R0 <- (mean_gt_R0 / sd_gt_R0)^2
 scale_R0 <- (sd_gt_R0^2) / mean_gt_R0
@@ -765,7 +765,7 @@ rate_epinow <- 1.2
 max_x_epinow <- 11
 
 # Generate data for gamma distribution
-x_epinow <- seq(0, max_x_epinow, length.out = 7)
+x_epinow <- seq(0, max_x_epinow)
 y_epinow <- dgamma(x_epinow, shape = shape_epinow, rate = rate_epinow)
 
 # Create a data frame for plotting
@@ -934,18 +934,19 @@ theme_bw() +
 plot_all
 ```
 
-NOTE: Notice that the SI from Epitrix doesn't appear on the graph. Here's why:
+NOTE: Notice that the SI from Epitrix and earlyR doesn't appear on the graph. Here's why:
 
 ```{r}
 plot_all_test3 <- ggplot() +
   geom_line(data = si_data, aes(x = time, y = si_distr, color = "EpiEstim"), size = 1) +
   geom_line(data = dist_gi_data_epitrix, aes(x = time_values_epitrix, y = gamma_values_epitrix, color = "epitrix"), size = 1) +
+  geom_line(data = si_df_earlyR, aes(x = x_earlyR, y = y_earlyR, color = "earlyR"), size = 1) +
   geom_line(data = epiLPS_data, aes(x = time_values_LPS, y = gamma_values_LPS, color = "EpiLPS"), size = 1) +
   scale_color_manual(name = "Legend", values = c("EpiEstim" = "blue4", 
                                                 
                                                 
                                                  "epitrix" = "gold1",
-                                               
+                                                "earlyR" = "seagreen2",
                                               
                                                  "EpiLPS" = "cornflowerblue")) +
   
