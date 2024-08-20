@@ -1242,11 +1242,11 @@ res_epinow <- epinow(reported_cases_epinow,
 
     ## Logging threshold set at INFO for the EpiNow2 logger
 
-    ## Writing EpiNow2 logs to the console and: /var/folders/kz/vb4s2bzd5m59rdxjpt9vyk_h0000gn/T//RtmpeYplLb/regional-epinow/2009-05-28.log
+    ## Writing EpiNow2 logs to the console and: /var/folders/kz/vb4s2bzd5m59rdxjpt9vyk_h0000gn/T//RtmpfVnaai/regional-epinow/2009-05-28.log
 
     ## Logging threshold set at INFO for the EpiNow2.epinow logger
 
-    ## Writing EpiNow2.epinow logs to the console and: /var/folders/kz/vb4s2bzd5m59rdxjpt9vyk_h0000gn/T//RtmpeYplLb/epinow/2009-05-28.log
+    ## Writing EpiNow2.epinow logs to the console and: /var/folders/kz/vb4s2bzd5m59rdxjpt9vyk_h0000gn/T//RtmpfVnaai/epinow/2009-05-28.log
 
 ``` r
 res_epinow$plots$R
