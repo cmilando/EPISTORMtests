@@ -1,0 +1,518 @@
+---
+title: "SI Code Breakdown"
+author: "Christine Sangphet"
+date: "2024-08-14"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+SI estimation when mean = 2.6 and sd = 1.5
+
+## EpiLPS
+
+```{r}
+epiLPS_si_func <- # Function to calculate the serial interval/generation time using a gamma distribution
+  my_Idist_gamma <- function(mean, sd) {
+    # Ensure the mean is greater than 1
+    if (mean <= 1) 
+      stop("mean must be larger than 1")
+    
+    # Ensure the standard deviation is positive
+    if (sd <= 0) 
+      stop("sd must be strictly positive")
+    
+    # Calculate the shape and rate parameters for the gamma distribution
+    shape <- (mean / sd)^2
+    rate <- mean / (sd^2)
+    
+    # Determine the maximum value for the gamma distribution
+    Dmax <- floor(stats::qgamma(0.9999, shape, rate))
+    
+    # Define a function to compute the gamma distribution's probabilities
+    gt <- function(t) {
+      val <- (stats::pgamma(t + 0.5, shape, rate) - 
+                stats::pgamma(t - 0.5, shape, rate)) / 
+        (stats::pgamma(Dmax + 0.5, shape, rate) - 
+           stats::pgamma(0.5, shape, rate))
+      return(val)
+    }
+    
+    # Apply the 'gt' function to each value from 1 to Dmax
+    pvec <- sapply(seq_len(Dmax), gt)
+    
+    # Return a list containing the probabilities and parameters
+    outlist <- list(pvec = pvec, dist = "gamma", shape = shape, rate = rate)
+    
+    return(outlist)
+  }
+```
+
+```{r}
+mean_val <- 2.6
+sd_val <- 1.5
+
+# Call the function
+
+result1 <- epiLPS_si_func(mean_val, sd_val)
+
+# View the result
+
+print(result1)
+```
+
+```{r}
+plot(result1$pvec, type = "l")
+```
+
+## EpiEstim
+
+```{r}
+epiestim_si_func <- function(k, mu, sigma) 
+{
+  if (sigma < 0) {
+    stop("sigma must be >=0.")
+  }
+  if (mu <= 1) {
+    stop("mu must be >1")
+  }
+  if (any(k < 0)) {
+    stop("all values in k must be >=0.")
+  }
+
+  a <- ((mu - 1) / sigma)^2
+  b <- sigma^2 / (mu - 1)
+
+  cdf_gamma <- function(k, a, b) stats::pgamma(k, shape = a, scale = b)
+
+  res <- k * cdf_gamma(k, a, b) + 
+    (k - 2) * cdf_gamma(k - 2, a, b) - 2 * (k - 1) * cdf_gamma(k - 1, a, b)
+  res <- res + a * b * (2 * cdf_gamma(k - 1, a + 1, b) - 
+                          cdf_gamma(k - 2, a + 1, b) - cdf_gamma(k, a + 1, b))
+  res <- vnapply(res, function(e) max(0, e))
+
+  return(res)
+}
+
+vnapply <- function(X, FUN, ...) {
+  vapply(X, FUN, numeric(1), ...)
+}
+```
+
+```{r}
+# Define parameters
+
+mu <- 2.6
+sigma <- 1.5
+
+# Define values for k
+
+k_values <- 0:10 
+
+# Calculate discrete probabilities
+
+result2 <- epiestim_si_func(k_values, mu, sigma)
+
+# Print results
+print(result2)
+```
+
+## epitrix
+
+```{r}
+epitrix_si_func <- function (mu, cv) 
+{
+    shape <- 1/(cv^2)
+    scale <- mu * cv^2
+    return(list(shape = shape, scale = scale))
+}
+```
+
+```{r}
+mu <- 2.6 
+sigma <- 1.5 
+cv <- sigma/mu
+
+result3 <- epitrix_si_func(mu, cv)
+
+print(result3)
+```
+
+```{r}
+#in previous testing we used the distcrete packaage to define the gamma distribution but here we plot solely based on the epitrix package 
+
+library(ggplot2)
+
+x_epitrix <- seq(0, 10)
+y_epitrix <- dgamma(x_epitrix, shape = result3$shape, scale = result3$scale)
+df_epitrix <- data.frame(x = x_epitrix, y = y_epitrix)
+ggplot(df_epitrix, aes(x_epitrix, y_epitrix)) +
+  geom_line() 
+```
+
+## earlyR
+
+```{r}
+earlyr_si_func <- function(disease = NULL, si = NULL, si_mean = NULL, si_sd = NULL, MAX_T = 1000) {
+  if (is.null(si)) {
+    if (is.null(si_mean) && disease == "ebola") {
+        si_mean <- 15.3
+    }
+    if (is.null(si_sd) && disease == "ebola") {
+        si_sd <- 9.3
+    }
+    if (is.null(si_mean)) stop("si_mean is missing")
+    if (is.null(si_sd)) stop("si_sd is missing")
+
+    si_param <- epitrix::gamma_mucv2shapescale(si_mean, si_sd / si_mean)
+
+    si_full <- distcrete::distcrete("gamma", shape = si_param$shape,
+                                    scale = si_param$scale,
+                                    interval = 1L, w = 0L)
+  } else {
+    if (!inherits(si, "distcrete")) {
+      stop("'si' must be a distcrete object")
+    }
+    if (as.integer(si$interval) != 1L) {
+      msg <- sprintf("interval used in si is not 1 day, but %d)", si$interval)
+      stop(msg)
+    }
+
+    si_full <- si
+  }
+  si <- si_full$d(seq_len(MAX_T))
+  si[1] <- 0
+  si <- si / sum(si)
+  
+  return(list(si = si, si_full = si_full))
+}
+```
+
+```{r}
+result4 <- earlyr_si_func(si_mean = 2.6, si_sd = 1.5)
+
+print(result4)
+```
+
+```{r}
+x_earlyr <- seq(0, 10)
+y_earlyr <- dgamma(x_earlyr, shape = 3.00444444444445, scale = 0.865384615384615)
+df_epitrix <- data.frame(x_earlyr, y_earlyr)
+ggplot(df_epitrix, aes(x_earlyr, y_earlyr)) +
+  geom_line() 
+```
+
+## R0
+
+```{r}
+r0_si_func <- function (type = c("empirical", "gamma", "weibull", "lognormal"), 
+    val = NULL, truncate = NULL, step = 1, first.half = TRUE, 
+    p0 = TRUE) 
+{
+    type = match.arg(type)
+    if (type == "empirical") {
+        GT <- val
+        if (any(GT < 0)) 
+            stop("Values in 'val' must be positive")
+        if (sum(GT) > 1) 
+            warning("Values will be standardized to sum to 1")
+        if (!is.null(truncate)) {
+            if (truncate < length(val)) {
+                warning(paste("Empirical distribution truncated at length ", 
+                  truncate))
+                GT <- GT[1:truncate]
+            }
+        }
+    }
+    else {
+        if (length(val) < 2) 
+            stop("val= c(mean,sd) must be provided for parametric GT")
+        mean <- val[1]
+        sd <- val[2]
+        if (any(c(mean, sd) <= 0)) 
+            stop("'mean' and 'sd' must be positive")
+        if (is.null(truncate)) {
+            tmax <- ceiling(mean + 10 * sd)
+        }
+        else {
+            tmax <- truncate
+        }
+        if (first.half) {
+            t.scale <- c(0, 0.5 + c(0:tmax))
+        }
+        else {
+            t.scale <- c(0:tmax)
+        }
+        if (type == "gamma") {
+            a <- mean * mean/(sd * sd)
+            s <- sd * sd/mean
+            GT <- diff(pgamma(t.scale, shape = a, scale = s))
+        }
+        else if (type == "lognormal") {
+            meanlog <- log(mean^2/sqrt(mean^2 + sd^2))
+            sdlog <- sqrt(2) * sqrt(log(sqrt(mean^2 + sd^2)/mean))
+            GT <- diff(plnorm(t.scale, meanlog = meanlog, sdlog = sdlog))
+        }
+        else if (type == "weibull") {
+            cv <- sd/(mean)
+            if (cv < 1e-06) {
+                nu <- cv/(sqrt(trigamma(1)) - cv * digamma(1))
+                shape <- 1/nu
+                scale <- (mean)/(1 + nu * digamma(1))
+            }
+            else {
+                aa <- log(cv^2 + 1)
+                nu <- 2 * cv/(1 + cv)
+                repeat {
+                  gb <- (lgamma(1 + 2 * nu) - 2 * lgamma(1 + 
+                    nu) - aa)/(2 * (digamma(1 + 2 * nu) - digamma(1 + 
+                    nu)))
+                  nu <- nu - gb
+                  if (abs(gb) < 1e-12) 
+                    break
+                }
+                shape <- 1/nu
+                scale <- exp(log(mean) - lgamma(1 + nu))
+            }
+            GT <- diff(pweibull(t.scale, shape = shape, scale = scale))
+        }
+        if (is.null(truncate)) {
+            GT.cum <- cumsum(GT)
+            if (length(GT.cum[GT.cum > 0.9999]) != 0) {
+                truncate <- (GT.cum > 0.9999) * (1:length(GT.cum))
+                truncate <- min(truncate[truncate > 0])
+                if (truncate == 0) 
+                  warning(paste("provide truncate larger than ", 
+                    mean + 10 * sd))
+                GT <- GT[1:truncate]
+            }
+        }
+    }
+    if (p0 == TRUE) 
+        GT[1] = 0
+    time <- 0:(length(GT) - 1)
+    GT <- GT/sum(GT)
+    mu <- sum(GT * time)
+    sigma <- sqrt(sum(GT * time^2) - mu^2)
+    return(structure(list(GT = GT, time = time, mean = mu, sd = sigma), 
+        class = "R0.GT"))
+}
+```
+
+```{r}
+r0_gamma_params <- c(2.6, 1.5)  
+
+result5 <- r0_si_func(type = "gamma", val = r0_gamma_params)
+
+print(result5)
+```
+
+```{r}
+plot(x = result5$time, y = result5$GT, type = "l")
+```
+
+## EpiNow2
+
+```{r}
+#obtained from EpiNow2/R/utilities.R discretised_gamma_pmf function on Github
+
+epinow2_si_func <- function(mean, sd, max_d, zero_pad = 0,
+                                  reverse = FALSE) {
+  alpha <- exp(2 * (log(mean) - log(sd)))
+  beta <- exp(log(mean) - 2 * log(sd))
+  pmf <- pgamma(1:(max_d + 1), shape = alpha, scale = beta) -
+    pgamma(0:max_d, shape = alpha, scale = beta)
+  pmf <- as.vector(pmf) /
+    as.vector(pgamma(max_d + 1, shape = alpha, scale = beta))
+  if (zero_pad > 0) {
+    pmf <- c(rep(0, zero_pad), pmf)
+  }
+  if (reverse) {
+    pmf <- rev(pmf)
+  }
+  return(pmf)
+}
+```
+
+```{r}
+mean_epinow <- 2.6
+sd_epinow <- 1.5
+max_d_epinow <- 10
+zero_pad <- 0
+reverse <- FALSE
+
+result6 <- epinow2_si_func(mean_epinow, sd_epinow, max_d_epinow, zero_pad, reverse)
+print(result6)
+```
+
+```{r}
+plot(result6, type = "l")
+```
+
+## ern
+
+```{r}
+ern_si_func <- function(d) {
+  a = get_discrete_dist(d)
+
+  emp.mean = sum(c(1:d$max)*a)
+
+  dplot = data.frame(
+    x = 1:d$max,
+    y = a
+  )
+
+  g = ggplot2::ggplot(dplot, ggplot2::aes(x=x, y=y)) +
+    ggplot2::geom_line(linewidth = 2) +
+    ggplot2::geom_point(size=3, fill='white', shape = 21, stroke = 1) +
+    ggplot2::geom_vline(xintercept = emp.mean, linetype = 'dashed')+
+    ggplot2::annotate(geom = 'label', x=emp.mean*1, y=0,
+                      label = paste('mean =',round(emp.mean,2)), size=3)+
+    ggplot2::theme(panel.grid.minor = ggplot2::element_blank())+
+    ggplot2::scale_x_continuous(breaks = 0:d$max)+
+    ggplot2::labs(title = d$dist, x='',y='')
+
+  return(g)
+}
+
+get_discrete_dist <- function(params){
+
+  # --- check args
+  check_dist(params)
+
+  if(!(params$dist %in% c("lnorm", "gamma", "norm", "unif"))) {
+    stop(paste0("Distribution recipe has not been defined
+                for specified distribution type (dist = `",
+                params$dist, "`)"))
+  }
+
+  # --- get discrete dist
+
+  if(params$dist == "lnorm"){
+    x <- stats::dlnorm(
+      x       = 1:params$max,
+      meanlog = params$meanlog,
+      sdlog   = params$sdlog
+    )
+  }
+
+  if(params$dist == "norm"){
+    x <- stats::dnorm(
+      x    = 1:params$max,
+      mean = params$mean,
+      sd   = params$sd
+    )
+  }
+
+  if(params$dist == "gamma"){
+    if("sd" %in% names(params)){
+      shape = params$mean^2/params$sd^2
+      scale = params$sd^2/params$mean
+    } else if("shape" %in% names(params)){
+      shape = params$shape
+      scale = params$mean/shape
+    }
+    x <- stats::dgamma(
+      1:params$max,
+      shape = shape,
+      scale = scale
+    )
+  }
+  
+  if(params$dist == "unif"){
+    x <- stats::runif(
+      1:params$max,
+      min = params$min,
+      max = params$max
+    )
+  }
+
+  # --- normalize to 1 and return
+  return(x/sum(x))
+}
+
+check_dist <- function(x){
+
+  if(x$dist == "gamma"){
+    if(!("sd" %in% names(x) | "shape" %in% names(x))){
+      stop(paste0("Gamma distributions must be specified with a mean and one of
+a standard deviation (sd) or a shape parameter (shape).
+Neither sd nor shape found: ", print(x)))
+    }
+    if("sd" %in% names(x) & "shape" %in% names(x)){
+      stop(paste0("Gamma distributions must be specified with a mean and either
+one of a standard deviation (sd) or a shape parameter (shape).
+Both sd and shape found: ", print(x)))
+    }
+  }
+
+  if(x$dist == "norm"){
+
+    assertthat::assert_that(assertthat::has_name(x, 'mean'))
+    assertthat::assert_that(assertthat::is.number(x$mean))
+    assertthat::assert_that(assertthat::is.number(x$sd))
+    if(x$sd <= 0) {
+      stop(paste0('Standard deviation for normal distribution must be positive',
+                  ' (currently sd = ',x$sd,'). ABORTING.'))
+    }
+  }
+
+  if(x$dist == "lnorm"){
+
+    assertthat::assert_that(assertthat::has_name(x, 'meanlog'))
+    assertthat::assert_that(assertthat::has_name(x, 'sdlog'))
+    assertthat::assert_that(assertthat::is.number(x$meanlog))
+    assertthat::assert_that(assertthat::is.number(x$sdlog))
+
+    if(x$sdlog <= 0) {
+      stop(paste0('Standard deviation for lognormal distribution must be positive',
+                  ' (currently sdlog = ',x$sdlog,'). ABORTING.'))
+    }
+  }
+
+  return()
+}
+```
+
+```{r}
+#obtained values from EpiEstim x ern 
+
+d <- list(
+  dist     = "gamma",
+  mean     = 2.6,
+  mean_sd  = 1.5,
+  shape    = 3.4,
+  shape_sd = 0.2,
+  max      = 11
+)
+
+ern_si_func <- function(d) {
+  
+ a = get_discrete_dist(d)
+
+  emp.mean = sum(c(1:d$max)*a)
+
+  dplot = data.frame(
+    x = 1:d$max,
+    y = a
+  )
+
+  g = ggplot2::ggplot(dplot, ggplot2::aes(x=x, y=y)) +
+    ggplot2::geom_line(linewidth = 2) +
+    ggplot2::geom_point(size=3, fill='white', shape = 21, stroke = 1) +
+    ggplot2::geom_vline(xintercept = emp.mean, linetype = 'dashed')+
+    ggplot2::annotate(geom = 'label', x=emp.mean*1, y=0,
+                      label = paste('mean =',round(emp.mean,2)), size=3)+
+    ggplot2::theme(panel.grid.minor = ggplot2::element_blank())+
+    ggplot2::scale_x_continuous(breaks = 0:d$max)+
+    ggplot2::labs(title = d$dist, x='',y='')
+
+  return(g)
+}
+
+result7 <- ern_si_func(d)
+
+print(result7)
+```
