@@ -1,0 +1,245 @@
+---
+title: "EpiEstim x EpiNow2 testing"
+author: "Christine Sangphet"
+date: "2024-07-25"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# **EpiEstim x EpiNow2**
+
+```{r}
+# load environment
+
+library(EpiEstim)
+library(ggplot2)
+library(incidence)
+library(EpiNow2)
+
+```
+
+```{r}
+#load data
+
+data(Flu2009)
+```
+
+### **Estimations with EpiEstim**
+
+```{r}
+res_parametric_si <- estimate_R(Flu2009$incidence, 
+                                method="parametric_si",
+                                config = make_config(list(
+                                  mean_si = 2.6, 
+                                  std_si = 1.5))
+)
+```
+
+```{r}
+plot(res_parametric_si)
+```
+
+### **Estimations with EpiNow2**
+
+```{r}
+library("ggplot2")
+reported_cases <- Flu2009$incidence
+ggplot(reported_cases, aes(x =  dates, y = I)) +
+  geom_col() +
+  theme_minimal() +
+  xlab("Date") +
+  ylab("Cases")
+```
+
+#### **SI**
+
+```{r}
+#copied from epiestim x ern testing
+
+si_distr <- c(0.000, 0.233, 0.359, 0.198, 0.103, 0.053, 0.027, 0.014, 0.007, 0.003, 0.002, 0.001)
+
+intervals <- seq_along(si_distr) - 1
+
+# The maximum value in the serial interval distribution
+max_si <- max(intervals[si_distr > 0])
+
+cat("Maximum SI:", max_si, "\n")
+```
+
+```{r}
+generation_time_est <- generation_time_opts(Gamma(mean = 2.6, sd = 1.5, max = 11))
+
+generation_time_est
+```
+
+```{r}
+# Define parameters
+
+shape <- 3
+rate <- 1.2
+max_x <- 11
+
+# Generate data for gamma distribution
+x <- seq(0, max_x, length.out = 7)
+y <- dgamma(x, shape = shape, rate = rate)
+
+# Create a data frame for plotting
+data <- data.frame(x = x, y = y)
+
+# Plot using ggplot2
+epinow_si <- ggplot(data, aes(x = x, y = y)) +
+  geom_line() +
+  labs(title = paste("Gamma Distribution (Shape:", shape, ", Rate:", rate, ")"),
+       x = "Time",
+       y = "Density") +
+  theme_minimal()
+
+plot(epinow_si)
+```
+
+#### R
+
+```{r}
+reported_cases <- Flu2009$incidence
+
+# Change column names
+
+colnames(reported_cases) <- c("date", "confirm")
+
+reported_cases
+```
+
+```{r}
+#EpiNow2 requires the following arguments:
+#reporting delay
+#delay (incubation period + reporting delay)
+#rt_prior
+```
+
+```{r}
+#NOTE: simulating random samples does not work
+
+# mean_log <- log(3)
+# sd_log <- 1
+#n <- nrow(Flu2009$incidence)
+
+# Generate random samples from a log-normal distribution
+
+#reporting_delay <- rlnorm(n, meanlog = mean_log, sdlog = sd_log)
+#incubation_period <- rlnorm(n, meanlog = mean_log, sdlog = sd_log)
+
+# Ensure values are within the specified maximum (truncating the values above max)
+
+#reporting_delay <- pmin(reporting_delay, 11)
+#incubation_period <- pmin(incubation_period, 11)
+```
+
+```{r}
+options(mc.cores = 4)
+
+reporting_delay <- Gamma(mean = 0.3143663, sd = 0.5606837, max = 0.8671758) #values from ern
+incubation_period <- Gamma(mean = 0.3589284, sd = 0.5991064, max = 1.057728) #values from ern 
+delay <- incubation_period + reporting_delay
+rt_prior <- list(mean = 4, sd = 2.9) #from epiestim x ern prior_R0_shape = 2 and prior_R0_rate = 0.5
+
+res <- epinow(reported_cases,
+  generation_time = generation_time_opts(generation_time_est),
+  delays = delay_opts(delay),
+  rt = rt_opts(prior = rt_prior)
+)
+```
+
+```{r}
+res$plots$R
+```
+
+### Comparison of SI estimation
+
+#### Side-by-side
+
+```{r}
+# Plot for res_parametric_si
+plot1 <- plot(res_parametric_si, "SI")
+
+# Plot for dist.gi
+plot2 <- plot(epinow_si)
+
+library(cowplot)
+
+plot_grid(plot1, plot2, ncol = 1)
+```
+
+#### Overlaying
+
+```{r}
+#turn epiestim SI into dataframe
+
+si_data <- data.frame(si_distr = res_parametric_si$si_distr[0:11],
+                      time = 0:10)
+
+plot <- ggplot() + 
+  geom_line(data = data, aes(x = x, y = y, color = "EpiNow2"), size = 1) +
+  geom_line(data = si_data, aes(x = time, y = si_distr, color = "EpiEstim"), size = 1) + 
+  scale_color_manual(name = "Legend", values = c("EpiEstim" = "blue4", "EpiNow2" = "lightblue1")) +
+  theme_bw() +
+  labs(title = "Serial Interval",
+       x = "Days after onset",
+       y = "Probability")
+
+plot
+```
+
+### Comparison of R estimation
+
+#### Side-by-side
+
+```{r}
+plot3 <- plot(res_parametric_si, "R")
+
+plot4 <- res$plots$R
+
+library(cowplot)
+
+plot_grid(plot3, plot4, ncol = 1)
+```
+
+#### Overlaying
+
+```{r}
+#turn epiestim R into a dataframe 
+
+names(res_parametric_si$R)
+
+r_data <- data.frame(
+  t = Flu2009$incidence$dates[8:32],
+  mean_r = c(res_parametric_si$R$`Mean(R)`),
+  quantile_0_025_r = c(res_parametric_si$R$`Quantile.0.025(R)`),
+  quantile_0_975_r = c(res_parametric_si$R$`Quantile.0.975(R)`)
+)
+
+#EpiNow2 into dataframe
+epinow_r <- data.frame(
+  epi_t = c(res$plots$R$data$date[8:32]),
+  epi_mean = c(res$plots$R$data$mean[8:32]),
+  epi_lwr = c(res$plots$R$data$lower_90[8:32]),
+  epi_upr = c(res$plots$R$data$upper_90[8:32])
+)
+
+#combine
+
+plot2 <- ggplot() +
+  geom_line(data = r_data, aes(x = t, y = mean_r, color = "EpiEstim")) +
+  geom_ribbon(data = r_data, aes(x = t, ymin = quantile_0_025_r, ymax = quantile_0_975_r), alpha = 0.2, fill = "black") +
+  geom_line(data = epinow_r, aes(x = epi_t, y = epi_mean, color = "EpiNow2")) +
+  geom_ribbon(data = epinow_r, aes(x = epi_t, ymin = epi_lwr, ymax = epi_upr), alpha = 0.2, fill = "violetred") +
+   scale_color_manual(name = "Legend", values = c("EpiEstim" = "black", "EpiNow" = "violetred")) +
+  
+  labs(title = "Estimated R",
+       x = "Date",
+       y = "R")
+
+plot2
+```
