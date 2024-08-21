@@ -74,7 +74,7 @@ scale <- 0.865384615384615
 
 # Define a range of values
 
-x <- seq(0, 10, by = 2) 
+x <- seq(0, 10)
 
 # Compute the density of the gamma distribution
 
