@@ -83,7 +83,7 @@ rate <- 1.2
 max_x <- 11
 
 # Generate data for gamma distribution
-x <- seq(0, max_x, length.out = 7)
+x <- seq(0, max_x)
 y <- dgamma(x, shape = shape, rate = rate)
 
 # Create a data frame for plotting

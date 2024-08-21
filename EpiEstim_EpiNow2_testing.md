@@ -107,7 +107,7 @@ rate <- 1.2
 max_x <- 11
 
 # Generate data for gamma distribution
-x <- seq(0, max_x, length.out = 7)
+x <- seq(0, max_x)
 y <- dgamma(x, shape = shape, rate = rate)
 
 # Create a data frame for plotting
@@ -214,16 +214,16 @@ res <- epinow(reported_cases,
 
     ## Logging threshold set at INFO for the EpiNow2 logger
 
-    ## Writing EpiNow2 logs to the console and: /var/folders/kz/vb4s2bzd5m59rdxjpt9vyk_h0000gn/T//RtmpbKXzpt/regional-epinow/2009-05-28.log
+    ## Writing EpiNow2 logs to the console and: /var/folders/kz/vb4s2bzd5m59rdxjpt9vyk_h0000gn/T//Rtmp3UndbF/regional-epinow/2009-05-28.log
 
     ## Logging threshold set at INFO for the EpiNow2.epinow logger
 
-    ## Writing EpiNow2.epinow logs to the console and: /var/folders/kz/vb4s2bzd5m59rdxjpt9vyk_h0000gn/T//RtmpbKXzpt/epinow/2009-05-28.log
+    ## Writing EpiNow2.epinow logs to the console and: /var/folders/kz/vb4s2bzd5m59rdxjpt9vyk_h0000gn/T//Rtmp3UndbF/epinow/2009-05-28.log
 
-    ## WARN [2024-08-20 14:19:04] epinow: There were 1 divergent transitions after warmup. See
+    ## WARN [2024-08-21 11:44:33] epinow: There were 3 divergent transitions after warmup. See
     ## https://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
     ## to find out why this is a problem and how to eliminate them. - 
-    ## WARN [2024-08-20 14:19:04] epinow: Examine the pairs() plot to diagnose sampling problems
+    ## WARN [2024-08-21 11:44:33] epinow: Examine the pairs() plot to diagnose sampling problems
     ##  -
 
 ``` r
