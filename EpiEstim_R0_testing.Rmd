@@ -51,7 +51,7 @@ Flu2009$si_distr
 ```
 
 ```{r}
-GT.chld.hsld1<-generation.time("empirical", c(0.000,0.233,0.359,0.198,0.103,0.053,0.027,0.014,0.007,0.003,0.002,0.001))
+GT.chld.hsld1<-generation.time("gamma", c(2.6, 1.5))
 
 GT.chld.hsld1
 plot(GT.chld.hsld1)
@@ -132,8 +132,8 @@ si_data <- data.frame(si_distr = res_parametric_si$si_distr[0:11],
 
 #turn R0 SI into dataframe
 
-mean_gt <- 2.596
-sd_gt <- 1.534531
+mean_gt <- 2.656065
+sd_gt <- 1.490568 
 
 shape <- (mean_gt / sd_gt)^2
 scale <- (sd_gt^2) / mean_gt

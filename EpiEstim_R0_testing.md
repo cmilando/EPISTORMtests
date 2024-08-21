@@ -61,14 +61,16 @@ Flu2009$si_distr
     ##  [1] 0.000 0.233 0.359 0.198 0.103 0.053 0.027 0.014 0.007 0.003 0.002 0.001
 
 ``` r
-GT.chld.hsld1<-generation.time("empirical", c(0.000,0.233,0.359,0.198,0.103,0.053,0.027,0.014,0.007,0.003,0.002,0.001))
+GT.chld.hsld1<-generation.time("gamma", c(2.6, 1.5))
 
 GT.chld.hsld1
 ```
 
     ## Discretized Generation Time distribution
-    ## mean: 2.596 , sd: 1.534531 
-    ##  [1] 0.000 0.233 0.359 0.198 0.103 0.053 0.027 0.014 0.007 0.003 0.002 0.001
+    ## mean: 2.656065 , sd: 1.490568 
+    ##  [1] 0.0000000000 0.2347607172 0.3061130999 0.2217949514 0.1258257345
+    ##  [6] 0.0624515217 0.0284937595 0.0122689922 0.0050642269 0.0020240933
+    ## [11] 0.0007887430 0.0003011238 0.0001130366
 
 ``` r
 plot(GT.chld.hsld1)
@@ -271,8 +273,8 @@ si_data <- data.frame(si_distr = res_parametric_si$si_distr[0:11],
 
 #turn R0 SI into dataframe
 
-mean_gt <- 2.596
-sd_gt <- 1.534531
+mean_gt <- 2.656065
+sd_gt <- 1.490568 
 
 shape <- (mean_gt / sd_gt)^2
 scale <- (sd_gt^2) / mean_gt
