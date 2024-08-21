@@ -189,7 +189,7 @@ scale <- 0.865384615384615
 
 # Generate a sequence of values
 
-x <- seq(0, 10, length.out = 7)
+x <- seq(0, 10)
 
 # Calculate the density of the gamma distribution
 
