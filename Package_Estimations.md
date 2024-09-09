@@ -1242,11 +1242,11 @@ res_epinow <- epinow(reported_cases_epinow,
 
     ## Logging threshold set at INFO for the EpiNow2 logger
 
-    ## Writing EpiNow2 logs to the console and: /var/folders/78/2423xqw95zg3dlgd9bnrm9xr0000gn/T//RtmpEuiw2p/regional-epinow/2009-05-28.log
+    ## Writing EpiNow2 logs to the console and: /var/folders/kz/vb4s2bzd5m59rdxjpt9vyk_h0000gn/T//RtmpfVnaai/regional-epinow/2009-05-28.log
 
     ## Logging threshold set at INFO for the EpiNow2.epinow logger
 
-    ## Writing EpiNow2.epinow logs to the console and: /var/folders/78/2423xqw95zg3dlgd9bnrm9xr0000gn/T//RtmpEuiw2p/epinow/2009-05-28.log
+    ## Writing EpiNow2.epinow logs to the console and: /var/folders/kz/vb4s2bzd5m59rdxjpt9vyk_h0000gn/T//RtmpfVnaai/epinow/2009-05-28.log
 
 ``` r
 res_epinow$plots$R
@@ -1315,7 +1315,7 @@ summary(LPSfit)
     ## Estimation of the reproduction number with Laplacian-P-splines 
     ## -------------------------------------------------------------- 
     ## Total number of days:          32 
-    ## Routine time (seconds):        0.043 
+    ## Routine time (seconds):        0.042 
     ## Method:                        Maximum a posteriori (MAP) 
     ## Hyperparam. optim method:      Nelder-Mead 
     ## Hyperparam. optim convergence: TRUE 
